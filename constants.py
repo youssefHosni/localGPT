@@ -27,6 +27,8 @@ CHROMA_SETTINGS = Settings(
     is_persistent=True,
 )
 
+Vector_DataBase = 'FAISS_DB'
+
 # Context Window and Max New Tokens
 CONTEXT_WINDOW_SIZE = 4096
 MAX_NEW_TOKENS = CONTEXT_WINDOW_SIZE  # int(CONTEXT_WINDOW_SIZE/4)
