@@ -2,11 +2,19 @@ import os
 import logging
 import click
 import torch
+import timeit
+
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+
+from langchain.vectorstores.pgvector import PGVector
+from langchain.document_loaders import TextLoader
+from langchain.docstore.document import Document
+from langchain.text_splitter import CharacterTextSplitter
+
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -14,6 +22,10 @@ from prompt_template_utils import get_prompt_template
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS # import FAISS vector database
+from langchain.vectorstores.pgvector import PGVector # import 
+
+
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -32,7 +44,8 @@ from constants import (
     MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
-    CHROMA_SETTINGS
+    CHROMA_SETTINGS,
+    Vector_DataBase
 )
 
 
@@ -120,11 +133,16 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     # load the vectorstore
-    db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
-        embedding_function=embeddings,
-        client_settings=CHROMA_SETTINGS
-    )
+    if Vector_DataBase == 'Chroma_DB':    
+        db = Chroma(
+            persist_directory=PERSIST_DIRECTORY,
+            embedding_function=embeddings,
+            client_settings=CHROMA_SETTINGS
+        )
+    elif Vector_DataBase == 'FAISS_DB':
+        #db = FAISS(embedding_function=embeddings, index = index, docstore = docstore, index_to_docstore_id=index_to_docstore_id )
+        db = FAISS.load_local(folder_path=PERSIST_DIRECTORY, index_name="faiss_index", embeddings=embeddings)
+
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
@@ -239,18 +257,22 @@ def main(device_type, show_sources, use_history, model_type):
     qa = retrieval_qa_pipline(device_type, use_history, promptTemplate_type=model_type)
     # Interactive questions and answers
     while True:
+        
         query = input("\nEnter a query: ")
         if query == "exit":
             break
+        
         # Get the answer from the chain
         res = qa(query)
         answer, docs = res["result"], res["source_documents"]
-
+        
         # Print the result
         print("\n\n> Question:")
         print(query)
         print("\n> Answer:")
         print(answer)
+        
+    
 
         if show_sources:  # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
