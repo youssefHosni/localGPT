@@ -7,7 +7,23 @@ import torch
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
+from langchain.document_loaders import TextLoader
+from langchain.text_splitter import CharacterTextSplitter
+
 from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS
+from langchain.vectorstores.pgvector import PGVector
+from langchain.vectorstores import PGEmbedding
+
+from langchain.chains import NebulaGraphQAChain
+from langchain.graphs import NebulaGraph
+
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import GraphCypherQAChain
+from langchain.graphs import Neo4jGraph
+
+import psycopg2
+
 
 from constants import (
     CHROMA_SETTINGS,
@@ -16,6 +32,7 @@ from constants import (
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
+    Vector_DataBase
 )
 
 def file_log(logentry):
@@ -146,12 +163,15 @@ def main(device_type):
     text_documents, python_documents = split_documents(documents)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     python_splitter = RecursiveCharacterTextSplitter.from_language(
-        language=Language.PYTHON, chunk_size=880, chunk_overlap=200
-    )
+        language=Language.PYTHON, chunk_size=880, chunk_overlap=200)
+    
     texts = text_splitter.split_documents(text_documents)
     texts.extend(python_splitter.split_documents(python_documents))
+    
     logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
     logging.info(f"Split into {len(texts)} chunks of text")
+    
+    print(texts[0])
 
     # Create embeddings
     embeddings = HuggingFaceInstructEmbeddings(
@@ -165,14 +185,76 @@ def main(device_type):
 
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-    db = Chroma.from_documents(
-        texts,
-        embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
-    )
-   
+    if Vector_DataBase == 'Chroma_DB':
+        # Chroma Database
+        db = Chroma.from_documents(
+            texts,
+            embeddings,
+            persist_directory=PERSIST_DIRECTORY,
+            client_settings=CHROMA_SETTINGS,
+        )
+        
+    elif Vector_DataBase == 'FAISS_DB':
+        # Faiss Database
+        db = FAISS.from_documents(texts, 
+                                embeddings
+                                )
+        
+        db.save_local(PERSIST_DIRECTORY, "faiss_index")
+    
+    elif Vector_DataBase == 'PGvector_DB':
+        # PGVector Database
+        COLLECTION_NAME = "Saudi_Sanitaryware_Market"
+        
+        host= os.environ['m5ep5eubs6.yjhj90cwyu.tsdb.cloud.timescale.com']
+        port= os.environ['38257']
+        user= os.environ['tsdbadmin']
+        password= os.environ['gcijpmi7hele9p25']
+        dbname= os.environ['tsdb']
 
+        # CONNECTION_STRING = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
+        CONNECTION_STRING = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
+        
+        
+        #conn = psycopg2.connect(CONNECTION_STRING)
+        #cursor = conn.cursor()
+
+        db = PGVector.from_documents(
+            embedding=embeddings,
+            documents=texts,
+            collection_name=COLLECTION_NAME,
+            connection_string=CONNECTION_STRING)
+    
+    elif Vector_DataBase == 'PG_Embeddings':
+
+        # PG Embeddings 
+        collection_name = "Saudi_Sanitaryware_Market"
+        connection_string = ''
+        
+        db = PGEmbedding.from_documents(
+            embedding=embeddings,
+            documents=texts,
+            collection_name=collection_name,
+            connection_string=connection_string,)
+
+    elif Vector_DataBase == 'Neo4j_DB':
+        
+        NEO4J_URI = 'neo4j+s://0efbb97d.databases.neo4j.io'
+        NEO4J_USERNAME = 'neo4j'
+        NEO4J_PASSWORD = 'W2UEItdSdfwfu-Ej-Fa7jwdynACScY7LKaY4hw_nW0w'
+        AURA_INSTANCEID = '0efbb97d'
+        AURA_INSTANCENAME = 'Instance01'
+        
+        graph = Neo4jGraph(
+                url=NEO4J_URI, 
+                username=NEO4J_USERNAME, 
+                password=NEO4J_PASSWORD)
+        
+        graph.query(texts)
+        
+        chain = GraphCypherQAChain.from_llm(
+            ChatOpenAI(temperature=0), graph=graph, verbose=True)
+    
 
 if __name__ == "__main__":
     logging.basicConfig(
